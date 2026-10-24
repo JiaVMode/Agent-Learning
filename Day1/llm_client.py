@@ -12,19 +12,24 @@ BASE_URL = os.getenv("VLLM_BASE_URL", "http://127.0.0.1:8000/v1").rstrip("/")
 MODEL = os.getenv("VLLM_MODEL", "Qwen3.5-9B")
 
 
-def request_model(
-    messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+def request_completion(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    *,
+    response_format: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """发送对话和工具定义，返回模型的 assistant 消息。"""
+    """请求 vLLM，返回完整响应；可选工具定义或最终回答格式。"""
     payload = {
         "model": MODEL,
         "messages": messages,
-        "tools": tools,
-        "tool_choice": "auto",
         "temperature": 0,
         "max_tokens": 1024,
         "chat_template_kwargs": {"enable_thinking": False},
     }
+    if tools:
+        payload.update(tools=tools, tool_choice="auto")
+    if response_format is not None:
+        payload["response_format"] = response_format
     request = urllib.request.Request(
         f"{BASE_URL}/chat/completions",
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -32,7 +37,7 @@ def request_model(
     )
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
-            return json.load(response)["choices"][0]["message"]
+            return json.load(response)
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"vLLM 请求失败（HTTP {exc.code}）：{detail}") from exc
@@ -41,3 +46,10 @@ def request_model(
             f"无法连接 vLLM 服务 {BASE_URL}：{exc.reason}"
             "（检查服务器上的 vLLM 进程和端口）"
         ) from exc
+
+
+def request_model(
+    messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Day1 使用的便捷接口，返回模型的 assistant 消息。"""
+    return request_completion(messages, tools)["choices"][0]["message"]
